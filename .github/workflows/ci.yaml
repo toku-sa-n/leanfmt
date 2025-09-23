@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  input-malformatted:
+    name: Ensure Test Inputs Are Malformatted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+        with:
+          test: false
+          build-args: leanfmt # Without this, lake build only builds the library, not the binary
+
+      - name: Validate inputs are not formatted
+        run: find test/cases -name "In.lean" -print0 | xargs -0 -I {} -P $(nproc) sh -c 'if command lake exe leanfmt --check {}; then exit 1; else exit 0; fi'
+
+  markdownlint:
+    name: Markdown Lint Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Download prettier exclusion rules for markdownlint
+        run: npm install markdownlint@latest --save-dev
+
+      - uses: DavidAnson/markdownlint-cli2-action@992badcdf24e3b8eb7e87ff9287fe931bcb00c6e # v20.0.0
+        with:
+          globs: "**/*.md !**/node_modules/**"
+
+  prettier:
+    name: Prettier Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Check formatting with Prettier
+        run: npx prettier --check .
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+        with:
+          test: true
+
+  test-compilation:
+    name: Test File Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+        with:
+          test: false
+          build-args: leanfmt
+
+      - name: Check test file compilation
+        run: find test/cases -name "*.lean" -print0 | xargs -0 -I {} -P $(nproc) sh -c 'lean {} || exit 1'
+
+  test-idempotency:
+    name: Test Idempotency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+        with:
+          test: false
+          build-args: leanfmt
+
+      - name: Validate test output formatting
+        run: find test/cases -name "Out.lean" -print0 | xargs -0 -I {} -P $(nproc) lake exe leanfmt --check {}
+
+  validate-test-structure:
+    name: Validate Test Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Validate test/cases structure
+        run: scripts/validate-test-structure.sh
