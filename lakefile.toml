@@ -1,0 +1,25 @@
+name = "leanfmt"
+version = "0.1.0"
+keywords = ["formatter", "lean4", "pretty-print", "code-style"]
+description = "A code formatter for Lean 4"
+homepage = "https://github.com/toku-sa-n/leanfmt"
+license = "Apache-2.0"
+testDriver = "runtests"
+
+[author]
+name = "Hiroki Tokunaga"
+email = "tokusan441@gmail.com"
+
+[[lean_lib]]
+name = "Leanfmt"
+roots = ["Leanfmt"]
+
+[[lean_exe]]
+name = "leanfmt"
+root = "Main"
+supportInterpreter = true
+
+[[lean_exe]]
+name = "runtests"
+root = "test.RunTests"
+supportInterpreter = true
