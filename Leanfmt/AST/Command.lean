@@ -11,6 +11,7 @@ namespace Leanfmt.AST
 
 private inductive CommandImpl where
   | definition (name : Identifier) (type : Option TypeSyntax) (value : Option Expr) : CommandImpl
+  | check (expr : Expr) : CommandImpl
   deriving Inhabited
 
 structure Command where
@@ -30,12 +31,17 @@ instance : Formattable Command where
       whenSome value fun expr => do
         text " := "
         format expr
+    | ⟨.check expr⟩ => do
+      text "#check "
+      format expr
 
 open Lean (Syntax) in
 def Command.fromSyntax (stx : Syntax) : Except FormatError Command := do
   match stx with
   | .node _ `Lean.Parser.Command.declaration #[_, defn] =>
     parseDefinition defn
+  | .node _ `Lean.Parser.Command.check #[_, expr] =>
+    return ⟨.check (← Expr.fromSyntax expr)⟩
   | _ => throw (FormatError.unimplemented s!"command: {stx.getKind}")
 where
   parseDefinition (stx : Syntax) : Except FormatError Command := do
