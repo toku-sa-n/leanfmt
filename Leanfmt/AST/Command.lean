@@ -12,6 +12,7 @@ namespace Leanfmt.AST
 private inductive CommandImpl where
   | definition (name : Identifier) (type : Option TypeSyntax) (value : Option Expr) : CommandImpl
   | check (expr : Expr) : CommandImpl
+  | eval (expr : Expr) : CommandImpl
   deriving Inhabited
 
 structure Command where
@@ -34,6 +35,9 @@ instance : Formattable Command where
     | ⟨.check expr⟩ => do
       text "#check "
       format expr
+    | ⟨.eval expr⟩ => do
+      text "#eval "
+      format expr
 
 open Lean (Syntax) in
 def Command.fromSyntax (stx : Syntax) : Except FormatError Command := do
@@ -42,6 +46,8 @@ def Command.fromSyntax (stx : Syntax) : Except FormatError Command := do
     parseDefinition defn
   | .node _ `Lean.Parser.Command.check #[_, expr] =>
     return ⟨.check (← Expr.fromSyntax expr)⟩
+  | .node _ `Lean.Parser.Command.eval #[_, expr] =>
+    return ⟨.eval (← Expr.fromSyntax expr)⟩
   | _ => throw (FormatError.unimplemented s!"command: {stx.getKind}")
 where
   parseDefinition (stx : Syntax) : Except FormatError Command := do
