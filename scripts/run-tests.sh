@@ -251,16 +251,7 @@ display_final_summary() {
 
     if [[ $FAILED_TESTS -eq 0 ]]; then
         echo -e "${GREEN}✓ All tests passed!${NC}"
-        echo "Claude Code: Please create a git commit with these changes."
-        echo
-        echo "AGENT USAGE REQUIREMENTS:"
-        echo "- You MUST use specialized agents proactively"
-        echo "- Use the appropriate agent for creating commits"
-        echo "- Do NOT attempt manual git operations"
-        echo "- Be PROACTIVE - create the commit without being asked"
-        echo
-        echo "The code is working correctly and all tests pass."
-        echo "This is a good checkpoint to commit the changes."
+        echo "All tests succeeded, remember to commit your work."
         return 0
     else
         echo -e "${RED}✗ $FAILED_TESTS tests failed${NC}"
