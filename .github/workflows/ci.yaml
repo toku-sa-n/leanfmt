@@ -16,7 +16,7 @@ jobs:
 
       - name: Validate PR title format
         if: ${{ env.ACT != 'true' }}
-        uses: amannn/action-semantic-pull-request@e32d7e603df1aa1ba07e981f2a23455dee596825 # v5.5.2
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v5.5.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
