@@ -8,12 +8,15 @@
 ### Goals
 - ファイル入力と標準入力の両方をサポートし、CLI 入口で統一的に扱う
 - stdout / in-place / check の 3 モードを排他的に切り替えられる
-- check モードは stdin を許可し、ファイル未指定時は stdin がある場合に判定できる
-- stdin とファイルの同時指定は `-` を明示した場合に許可し、指定順に処理する
-- 標準 Lean 4 構文を少なくともサポートする
-- stdout で複数ファイルを整形する場合はファイル名ヘッダを付与する（単一ファイル/ stdin は除外）
+- check モードは stdin を許可し、ファイル未指定時は `leanfmt` と同様に stdin を読み取って判定できる
+- 引数なしで実行された場合は stdin を読み取って整形する
+- stdin とファイルの同時指定は `-` を明示した場合に許可し、指定順に処理する（`-` は 1 回のみ許可）
+- Lean 4 標準構文をすべてサポートする（未対応はバグとして扱う）
+- 各入力ソースの整形結果は Lean 4 構文として有効であることを保証し、複数入力の連結出力は有効性を保証しない
+- stdout で複数ファイルを整形する場合は `foo.lean` の形式でファイル名ヘッダを 1 行出力し、続けて空行を 1 行挿入する（単一ファイル/ stdin は除外）
 - 決定的かつ冪等な整形結果を保証し、CI 判定を安定化する
 - 失敗原因を明確なメッセージと終了コードで返す
+- leanfmt 自身の実装ソースコードを少なくとも整形できる
 
 ### Non-Goals
 - ユーザーが自由に整形ルールを変更できる設定機構
@@ -26,13 +29,18 @@
 | 1.1 | ファイルパス指定時に入力を読み込む | CLI Runner | CLI Service | CLI フロー |
 | 1.2 | 標準入力を読み込む | CLI Runner | CLI Service | CLI フロー |
 | 1.3 | 入力読取失敗を診断する | CLI Runner | CLI Service | エラー処理フロー |
+| 1.5 | `-` を複数回指定したときはエラー | Options Parser | Options Service | オプション検証フロー |
 | 2.1 | 標準出力モードで出力する | CLI Runner | CLI Service | CLI フロー |
 | 2.2 | in-place で上書きする | CLI Runner | CLI Service | CLI フロー |
 | 2.3 | check モードで一致判定する | CLI Runner | CLI Service | CLI フロー |
+| 2.5 | check モードでファイル未指定時に stdin を読み取る | CLI Runner | CLI Service | CLI フロー |
+| 2.6 | stdout 複数ファイル時にヘッダと空行を出力する | CLI Runner | CLI Service | CLI フロー |
+| 2.7 | check モードで TTY 上の stdin を待機して読み取る | CLI Runner | CLI Service | CLI フロー |
 | 2.4 | モード競合をエラーにする | Options Parser | Options Service | オプション検証フロー |
 | 3.1 | 決定的な整形結果を出す | Formatter Engine | Formatter Service | 整形フロー |
 | 3.2 | 再整形で同一出力 | Formatter Engine | Formatter Service | 整形フロー |
-| 3.3 | 構文的に有効な出力を生成 | Module Parser Adapter | Parser Service | 整形フロー |
+| 3.3 | 各入力ソースごとに構文的に有効な出力を生成（連結出力は保証しない） | Module Parser Adapter | Parser Service | 整形フロー |
+| 3.5 | leanfmt 実装ソースの整形 | Formatter Engine | Formatter Service | 整形フロー |
 | 4.1 | 構文エラーを診断 | Module Parser Adapter | Parser Service | エラー処理フロー |
 | 4.2 | 書き込み失敗を診断 | CLI Runner | CLI Service | エラー処理フロー |
 | 4.3 | 無効オプションを診断 | Options Parser | Options Service | オプション検証フロー |
@@ -152,10 +160,15 @@ sequenceDiagram
 **Responsibilities & Constraints**
 - 引数解析後に入力ソース（ファイル/標準入力）と出力モードを決定する
 - check / in-place / stdout の排他性を守る
-- check モードは stdin 入力を許可し、ファイル未指定時は stdin がある場合のみ判定できる
-- stdin を入力として扱うには `-` を明示する（例: `leanfmt -- foo.lean bar.lean -`）
+- check モードは stdin 入力を許可し、ファイル未指定時は `leanfmt` と同様に stdin を読み取り、TTY でも入力待機する
+- 引数なしの場合は stdin を入力として扱う
+- `-` を指定した場合は stdin を入力として扱う（例: `leanfmt -- foo.lean bar.lean -`）
+- `-` は 1 回のみ許可し、複数指定はエラーとする
 - stdin とファイルの同時指定は `-` がある場合のみ許可し、指定順に入力を処理する
-- stdout で複数ファイルを整形する場合はファイル名ヘッダを出力し、単一ファイルまたは stdin の場合は出力しない
+- `--in-place` と `-` の併用はエラーとする
+- stdout で複数ファイルを整形する場合は `foo.lean` 形式のヘッダ 1 行と空行 1 行を出力し、単一ファイルまたは stdin の場合は出力しない
+- check モードでは複数入力のうち 1 件でも不一致があれば失敗とする
+- 各入力ソースの整形結果は Lean 4 構文として有効であることを保証し、複数入力の連結出力は有効性を保証しない
 - IO 例外と整形エラーを捕捉し、標準エラーに診断を出す
 - 無効オプション時は Usage を標準エラーに出力する
 - 終了コードは成功 0、失敗 1 を一貫して返す
@@ -185,8 +198,12 @@ end Leanfmt.CLI
 **Implementation Notes**
 - Integration: `Options` と `Module.parse` と `runFormatter` を直列に接続する
 - Validation: 入力がディレクトリの場合はエラーとして扱う
-- Validation: `-` が含まれるときのみ stdin を読み取り、それ以外は stdin を無視する
-- Output: stdout で複数ファイルを整形する場合のみファイル名ヘッダを付与する
+- Validation: 引数が空のときは stdin を読み取る
+- Validation: check でファイル未指定のときは stdin を読み取り、TTY でも入力待機する
+- Validation: `-` が含まれるときは stdin を読み取る
+- Validation: `-` が複数含まれるときはエラーとする
+- Validation: `--in-place` と `-` を同時指定した場合はエラーとする
+- Output: stdout で複数ファイルを整形する場合のみ `foo.lean` 形式の 1 行ヘッダ + 空行を付与する
 - Risks: IO 例外が未捕捉にならないよう、境界で捕捉する
 
 #### Options Parser
@@ -201,8 +218,10 @@ end Leanfmt.CLI
 - `--check` と `--in-place` の競合を検出する
 - 未知オプションを `ValidationError` として返す
 - in-place でファイル指定がない場合は失敗とする
-- check でファイル指定がない場合でも許可し、stdin の有無は CLI Runner が判定する
+- check でファイル指定がない場合でも許可し、stdin の読み取りは CLI Runner が行う
+- `--in-place` と `-` の併用は `ValidationError` として返す
 - `-` は stdin 指定の特別な入力として扱い、順序は保持して CLI Runner に渡す
+- `-` が複数含まれる場合は `ValidationError` として返す
 
 **Dependencies**
 - Inbound: `CLI Runner` — 引数解析要求 (P0)
@@ -247,7 +266,7 @@ end Leanfmt
 **Responsibilities & Constraints**
 - Lean のネイティブパーサ API を利用して `Syntax` を取得する
 - 解析失敗は `FormatError` として CLI に伝播する
-- Lean 4 標準構文は少なくとも受理し、AST へ変換できることを保証する
+- Lean 4 標準構文は原則すべて受理し、AST へ変換できることを保証する
 - 解析結果から `Command` の配列を構築する
 
 **Dependencies**
@@ -270,7 +289,7 @@ end Leanfmt.AST
 
 **Implementation Notes**
 - Integration: `parseHeader` / `parseCommand` の状態遷移を維持する
-- Validation: Lean 4 標準構文で未対応が発生しないよう `Command.fromSyntax` を拡充し、標準外/未対応構文は失敗を返す
+- Validation: Lean 4 標準構文で未対応が発生しないよう `Command.fromSyntax` を拡充し、標準外構文は失敗、標準構文の未対応はバグとして扱う
 - Risks: Lean の Parser API 変更時に互換性検証が必要
 
 #### Formatter Engine
@@ -362,13 +381,18 @@ end Leanfmt
 - stdout / in-place / check のモード切り替え
 - ファイル入力と標準入力の分岐
 - check モードで stdin を用いた一致/不一致判定
-- stdout で複数ファイル指定時のヘッダ出力と単一ファイル時の非出力
+- 複数入力の check モードで 1 件でも不一致があれば非成功終了コードになること
+- 引数なし実行時の stdin 整形
+- `--in-place` と `-` 併用時のエラー
+- `-` の複数指定がエラーになること
+- stdout で複数ファイル指定時のヘッダ出力（`foo.lean` + 空行）と単一ファイル時の非出力
 - ファイル書き込み失敗時の診断
 
 ### E2E/UI Tests
 - `test/cases/**/In.lean` と `Out.lean` のゴールデンテスト
 - `Out.lean` 再整形による冪等性チェック
-- 標準 Lean 4 構文のゴールデンケースを用意し、少なくとも標準構文の往復が成功することを確認
+- 標準 Lean 4 構文のゴールデンケースを用意し、単一入力時に標準構文の往復が成功することを確認
+- leanfmt の実装ソース（`Leanfmt/**/*.lean` 等）を対象に整形が成功することを確認
 
 ## Optional Sections (include when relevant)
 
