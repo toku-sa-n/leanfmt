@@ -1,4 +1,8 @@
 import Leanfmt.AST.Command
+import Leanfmt.AST.Command.Definition
+import Leanfmt.AST.Command.Check
+import Leanfmt.AST.Command.Eval
+import Leanfmt.AST.Command.Example
 import Leanfmt.AST.Identifier
 import Leanfmt.AST.Module
 import Leanfmt.AST.Type
