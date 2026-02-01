@@ -8,12 +8,15 @@
 ### Goals
 - ファイル入力と標準入力の両方をサポートし、CLI 入口で統一的に扱う
 - stdout / in-place / check の 3 モードを排他的に切り替えられる
+- check モードは stdin を許可し、ファイル未指定時は stdin がある場合に判定できる
+- 標準 Lean 4 構文を少なくともサポートする
+- stdout で複数ファイルを整形する場合はファイル名ヘッダを付与する（単一ファイル/ stdin は除外）
 - 決定的かつ冪等な整形結果を保証し、CI 判定を安定化する
 - 失敗原因を明確なメッセージと終了コードで返す
 
 ### Non-Goals
 - ユーザーが自由に整形ルールを変更できる設定機構
-- Lean 4 の全構文を完全に網羅する高度な整形ロジック
+- Lean 4 標準構文を超える方言・拡張の完全網羅
 - IDE 連携や LSP レベルの増分フォーマット
 
 ## Requirements Traceability
@@ -101,7 +104,11 @@ sequenceDiagram
     CLI->>Parser: parse
     Parser->>Formatter: format
     Formatter-->>CLI: formatted
-    CLI->>IO: writeStdout
+    alt check
+      CLI->>CLI: compare
+    else stdout
+      CLI->>IO: writeStdout
+    end
   else files
     loop eachFile
       CLI->>IO: readFile
@@ -113,6 +120,7 @@ sequenceDiagram
       else inPlace
         CLI->>IO: writeFile
       else stdout
+        CLI->>IO: writeHeaderIfMultiple
         CLI->>IO: writeStdout
       end
     end
@@ -143,6 +151,8 @@ sequenceDiagram
 **Responsibilities & Constraints**
 - 引数解析後に入力ソース（ファイル/標準入力）と出力モードを決定する
 - check / in-place / stdout の排他性を守る
+- check モードは stdin 入力を許可し、ファイル未指定時は stdin がある場合のみ判定できる
+- stdout で複数ファイルを整形する場合はファイル名ヘッダを出力し、単一ファイルまたは stdin の場合は出力しない
 - IO 例外と整形エラーを捕捉し、標準エラーに診断を出す
 - 終了コードは成功 0、失敗 1 を一貫して返す
 
@@ -171,6 +181,7 @@ end Leanfmt.CLI
 **Implementation Notes**
 - Integration: `Options` と `Module.parse` と `runFormatter` を直列に接続する
 - Validation: 入力がディレクトリの場合はエラーとして扱う
+- Output: stdout で複数ファイルを整形する場合のみファイル名ヘッダを付与する
 - Risks: IO 例外が未捕捉にならないよう、境界で捕捉する
 
 #### Options Parser
@@ -184,7 +195,8 @@ end Leanfmt.CLI
 **Responsibilities & Constraints**
 - `--check` と `--in-place` の競合を検出する
 - 未知オプションを `ValidationError` として返す
-- check / in-place でファイル指定がない場合は失敗とする
+- in-place でファイル指定がない場合は失敗とする
+- check でファイル指定がない場合でも許可し、stdin の有無は CLI Runner が判定する
 
 **Dependencies**
 - Inbound: `CLI Runner` — 引数解析要求 (P0)
@@ -208,7 +220,7 @@ def Options.getFiles (opts : Options) : Array String
 end Leanfmt
 ```
 - Preconditions: `args` は CLI から渡された生引数
-- Postconditions: `Options` は排他的モードとファイル存在制約を満たす
+- Postconditions: `Options` は排他的モードと入力制約を満たす
 - Invariants: `checkMode` と `inPlaceMode` は同時に true にならない
 
 **Implementation Notes**
@@ -229,6 +241,7 @@ end Leanfmt
 **Responsibilities & Constraints**
 - Lean のネイティブパーサ API を利用して `Syntax` を取得する
 - 解析失敗は `FormatError` として CLI に伝播する
+- Lean 4 標準構文は少なくとも受理し、AST へ変換できることを保証する
 - 解析結果から `Command` の配列を構築する
 
 **Dependencies**
@@ -251,7 +264,7 @@ end Leanfmt.AST
 
 **Implementation Notes**
 - Integration: `parseHeader` / `parseCommand` の状態遷移を維持する
-- Validation: `Command.fromSyntax` で未対応構文を検出した場合は失敗を返す
+- Validation: Lean 4 標準構文で未対応が発生しないよう `Command.fromSyntax` を拡充し、標準外/未対応構文は失敗を返す
 - Risks: Lean の Parser API 変更時に互換性検証が必要
 
 #### Formatter Engine
@@ -311,7 +324,7 @@ end Leanfmt
 
 **Consistency & Integrity**:
 - `Options` は `checkMode` と `inPlaceMode` を同時に true にしない
-- `Options.files` が空のときは `checkMode` と `inPlaceMode` が false
+- `Options.files` が空のときは `inPlaceMode` が false
 - `Module.commands` は終端コマンドを含まない
 
 ### Data Contracts & Integration
@@ -342,11 +355,14 @@ end Leanfmt
 ### Integration Tests
 - stdout / in-place / check のモード切り替え
 - ファイル入力と標準入力の分岐
+- check モードで stdin を用いた一致/不一致判定
+- stdout で複数ファイル指定時のヘッダ出力と単一ファイル時の非出力
 - ファイル書き込み失敗時の診断
 
 ### E2E/UI Tests
 - `test/cases/**/In.lean` と `Out.lean` のゴールデンテスト
 - `Out.lean` 再整形による冪等性チェック
+- 標準 Lean 4 構文のゴールデンケースを用意し、少なくとも標準構文の往復が成功することを確認
 
 ## Optional Sections (include when relevant)
 
