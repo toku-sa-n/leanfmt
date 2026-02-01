@@ -1,16 +1,16 @@
 {
   "feature_name": "leanfmt-implementation",
   "created_at": "2026-02-01T09:09:50Z",
-  "updated_at": "2026-02-01T09:16:36Z",
+  "updated_at": "2026-02-01T09:27:27Z",
   "language": "ja",
-  "phase": "requirements-generated",
+  "phase": "design-generated",
   "approvals": {
     "requirements": {
       "generated": true,
-      "approved": false
+      "approved": true
     },
     "design": {
-      "generated": false,
+      "generated": true,
       "approved": false
     },
     "tasks": {
