@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+      - uses: leanprover/lean-action@c544e89643240c6b398f14a431bcdc6309e36b3e # v1.4.0
         with:
           test: false
           build-args: leanfmt # Without this, lake build only builds the library, not the binary
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+      - uses: leanprover/lean-action@c544e89643240c6b398f14a431bcdc6309e36b3e # v1.4.0
         with:
           test: true
 
@@ -72,7 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+      - uses: leanprover/lean-action@c544e89643240c6b398f14a431bcdc6309e36b3e # v1.4.0
         with:
           test: false
           build-args: leanfmt
@@ -86,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: leanprover/lean-action@434f25c2f80ded67bba02502ad3a86f25db50709 # v1.3.0
+      - uses: leanprover/lean-action@c544e89643240c6b398f14a431bcdc6309e36b3e # v1.4.0
         with:
           test: false
           build-args: leanfmt
