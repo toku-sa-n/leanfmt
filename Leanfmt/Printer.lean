@@ -14,6 +14,9 @@ abbrev Printer := StateT PrinterState IO
 class Formattable (α : Type) where
   format : α → Printer Unit
 
+def getFormatConfig : Printer FormatConfig := do
+  return (← get).config
+
 def runFormatter {α : Type} [Formattable α] (a : α) (config : FormatConfig := default) : IO String :=
   StateT.run (Formattable.format a) { (default : PrinterState) with config }
     |>.map fun (_, st) => st.builder.dropRightWhile (· == '\n') ++ "\n"

@@ -74,65 +74,94 @@ For more information, visit: https://github.com/toku-sa-n/leanfmt"#
 def showHelp : IO Unit := do
   IO.print helpText
 
-def formatFile (path : String) : IO String := do
-  let source ← IO.FS.readFile path
-  Leanfmt.AST.Module.parse source path >>= Leanfmt.runFormatter
+inductive InputSource where
+  | stdin : InputSource
+  | file (path : String) : InputSource
+  deriving Inhabited
 
-def isFormatted (path : String) : IO Bool := do
-  let source ← IO.FS.readFile path
-  formatFile path |>.map (· == source)
+def InputSource.label : InputSource → String
+  | .stdin => "<stdin>"
+  | .file path => path
 
-def formatStdin : IO UInt32 := do
-  try
-    let source ← (← IO.getStdin).readToEnd
-    Leanfmt.AST.Module.parse source "<stdin>"
-      >>= Leanfmt.runFormatter
-      >>= IO.print
-    return successCode
-  catch e =>
-    IO.eprintln s!"Error reading from stdin: {e}"
-    return errorCode
+def resolveInputs (files : Array String) : Array InputSource :=
+  if files.isEmpty then
+    #[.stdin]
+  else
+    files.map fun file => if file == "-" then .stdin else .file file
 
-def checkFiles (files : Array String) : IO UInt32 := do
+def countFileInputs (inputs : Array InputSource) : Nat :=
+  inputs.foldl (fun acc input =>
+    match input with
+    | .file _ => acc + 1
+    | .stdin => acc) 0
+
+def readSource (input : InputSource) : IO String := do
+  match input with
+  | .stdin => (← IO.getStdin).readToEnd
+  | .file path =>
+      if ← System.FilePath.isDir path then
+        throw <| IO.userError s!"{path} is a directory, not a file"
+      IO.FS.readFile path
+
+def formatSource (source : String) (label : String) : IO String := do
+  Leanfmt.AST.Module.parse source label >>= Leanfmt.runFormatter
+
+def formatInput (input : InputSource) : IO (String × String) := do
+  let label := input.label
+  let source ← readSource input
+  let formatted ← formatSource source label
+  return (source, formatted)
+
+def checkInputs (inputs : Array InputSource) : IO UInt32 := do
   let mut hasUnformatted := false
 
-  for file in files do
+  for input in inputs do
+    let label := input.label
     try
-      if ← System.FilePath.isDir file then
-        throw <| IO.userError s!"{file} is a directory, not a file"
-
-      if !(← isFormatted file) then
-        IO.eprintln s!"{file} is not formatted"
+      let (source, formatted) ← formatInput input
+      if source != formatted then
+        IO.eprintln s!"{label} is not formatted"
         hasUnformatted := true
     catch e =>
-      IO.eprintln s!"Error checking {file}: {e}"
+      IO.eprintln s!"Error checking {label}: {e}"
       return errorCode
 
   return if hasUnformatted then errorCode else successCode
 
-def formatFilesToStdout (files : Array String) : IO UInt32 := do
-  for file in files do
-    try
-      if ← System.FilePath.isDir file then
-        throw <| IO.userError s!"{file} is a directory, not a file"
+def formatInputsToStdout (inputs : Array InputSource) : IO UInt32 := do
+  let fileCount := countFileInputs inputs
 
-      formatFile file >>= IO.print
+  for input in inputs do
+    let label := input.label
+    try
+      let (_, formatted) ← formatInput input
+      match input with
+      | .file path =>
+          if fileCount > 1 then
+            IO.println path
+            IO.println ""
+      | .stdin => pure ()
+      IO.print formatted
     catch e =>
-      IO.eprintln s!"Error formatting {file}: {e}"
+      IO.eprintln s!"Error formatting {label}: {e}"
       return errorCode
 
   return successCode
 
-def formatInPlace (files : Array String) : IO UInt32 := do
-  for file in files do
-    try
-      if ← System.FilePath.isDir file then
-        throw <| IO.userError s!"{file} is a directory, not a file"
-
-      formatFile file >>= IO.FS.writeFile file
-    catch e =>
-      IO.eprintln s!"Error formatting {file} in-place: {e}"
-      return errorCode
+def formatInputsInPlace (inputs : Array InputSource) : IO UInt32 := do
+  for input in inputs do
+    match input with
+    | .stdin =>
+        IO.eprintln "Error formatting <stdin> in-place: stdin is not supported"
+        return errorCode
+    | .file path =>
+        try
+          let source ← readSource input
+          let formatted ← formatSource source path
+          IO.FS.writeFile path formatted
+        catch e =>
+          IO.eprintln s!"Error formatting {path} in-place: {e}"
+          return errorCode
 
   return successCode
 
@@ -141,20 +170,19 @@ def runWith (opts : Options) : IO UInt32 := do
   if opts.getShowHelp then
     showHelp *> pure successCode
   else
-    let files := opts.getFiles
-    if files.isEmpty then
-      formatStdin
-    else if opts.getCheckMode then
-      checkFiles files
+    let inputs := resolveInputs opts.getFiles
+    if opts.getCheckMode then
+      checkInputs inputs
     else if opts.getInPlaceMode then
-      formatInPlace files
+      formatInputsInPlace inputs
     else
-      formatFilesToStdout files
+      formatInputsToStdout inputs
 
 def main (args : Array String) : IO UInt32 := do
   match Options.parseArguments args with
   | .error err =>
-    IO.eprintln s!"Error: {err}"
+    IO.eprintln s!"{err}"
+    IO.eprintln helpText
     return errorCode
   | .ok options =>
     runWith options

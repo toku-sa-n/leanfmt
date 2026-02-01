@@ -63,6 +63,7 @@ build_formatter() {
     # Change to project root for build to ensure proper context
     cd "$PROJECT_ROOT"
     lake build leanfmt
+    lake build Leanfmt
 
     if [[ ! -f "$LEANFMT_BIN" ]]; then
         echo -e "${RED}ERROR: Failed to build leanfmt binary at $LEANFMT_BIN${NC}"
@@ -70,6 +71,114 @@ build_formatter() {
     fi
 
     echo -e "${GREEN}✓ Leanfmt binary built successfully at $LEANFMT_BIN${NC}"
+}
+run_unit_tests() {
+    echo "Running unit tests..."
+    (cd "$PROJECT_ROOT" && lake env lean --run test/UnitTests.lean)
+    echo -e "${GREEN}✓ Unit tests passed${NC}"
+    echo
+}
+assert_file_eq() {
+    local test_name="$1"
+    local expected_file="$2"
+    local actual_file="$3"
+
+    if ! diff -u "$expected_file" "$actual_file" >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} $test_name: output mismatch"
+        diff -u "$expected_file" "$actual_file" || true
+        return 1
+    fi
+    return 0
+}
+run_cli_tests() {
+    echo "Running CLI integration tests..."
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    trap "rm -rf '$temp_dir'" RETURN
+
+    local input_unformatted="def   foo   :   Nat   :=   42"
+    local formatted_def
+    formatted_def=$'def foo : Nat :=\n  42\n'
+
+    # stdin formatting
+    printf "%s\n" "$input_unformatted" | "$LEANFMT_BIN" > "$temp_dir/stdin.out"
+    printf "%s" "$formatted_def" > "$temp_dir/stdin.expected"
+    assert_file_eq "stdin format" "$temp_dir/stdin.expected" "$temp_dir/stdin.out"
+
+    # --check with stdin (unformatted should fail)
+    if printf "%s\n" "$input_unformatted" | "$LEANFMT_BIN" --check >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} check stdin should fail on unformatted input"
+        return 1
+    fi
+
+    # --check with stdin (formatted should succeed)
+    if ! printf "%s" "$formatted_def" | "$LEANFMT_BIN" --check >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} check stdin should succeed on formatted input"
+        return 1
+    fi
+
+    # stdout with multiple files should include headers
+    local file1="$temp_dir/a.lean"
+    local file2="$temp_dir/b.lean"
+    printf "%s\n" "$input_unformatted" > "$file1"
+    printf "%s\n" "$input_unformatted" > "$file2"
+    "$LEANFMT_BIN" "$file1" "$file2" > "$temp_dir/multi.out"
+    : > "$temp_dir/multi.expected"
+    printf "%s\n\n" "$file1" >> "$temp_dir/multi.expected"
+    printf "%s" "$formatted_def" >> "$temp_dir/multi.expected"
+    printf "%s\n\n" "$file2" >> "$temp_dir/multi.expected"
+    printf "%s" "$formatted_def" >> "$temp_dir/multi.expected"
+    assert_file_eq "stdout headers for multiple files" "$temp_dir/multi.expected" "$temp_dir/multi.out"
+
+    # stdin + files order (stdin should be emitted at '-' position)
+    local file3="$temp_dir/c.lean"
+    local file4="$temp_dir/d.lean"
+    printf "%s\n" "$input_unformatted" > "$file3"
+    printf "%s\n" "$input_unformatted" > "$file4"
+    printf "%s\n" "$input_unformatted" | "$LEANFMT_BIN" "$file3" - "$file4" > "$temp_dir/mixed.out"
+    : > "$temp_dir/mixed.expected"
+    printf "%s\n\n" "$file3" >> "$temp_dir/mixed.expected"
+    printf "%s" "$formatted_def" >> "$temp_dir/mixed.expected"
+    printf "%s" "$formatted_def" >> "$temp_dir/mixed.expected"
+    printf "%s\n\n" "$file4" >> "$temp_dir/mixed.expected"
+    printf "%s" "$formatted_def" >> "$temp_dir/mixed.expected"
+    assert_file_eq "stdin order with files" "$temp_dir/mixed.expected" "$temp_dir/mixed.out"
+
+    # --in-place updates file
+    local inplace_file="$temp_dir/inplace.lean"
+    printf "%s\n" "$input_unformatted" > "$inplace_file"
+    "$LEANFMT_BIN" --in-place "$inplace_file" >/dev/null 2>&1
+    printf "%s" "$formatted_def" > "$temp_dir/inplace.expected"
+    assert_file_eq "in-place formatting" "$temp_dir/inplace.expected" "$inplace_file"
+
+    # --in-place without files should fail
+    if "$LEANFMT_BIN" --in-place >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} in-place without files should fail"
+        return 1
+    fi
+
+    # --in-place with stdin should fail
+    if printf "%s\n" "$input_unformatted" | "$LEANFMT_BIN" --in-place - >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} in-place with stdin should fail"
+        return 1
+    fi
+
+    # multiple stdin markers should fail
+    if printf "%s\n" "$input_unformatted" | "$LEANFMT_BIN" - - >/dev/null 2>&1; then
+        echo -e "${RED}✗${NC} multiple stdin markers should fail"
+        return 1
+    fi
+
+    # self-formatting should succeed
+    local self_files=()
+    mapfile -t self_files < <(find "$PROJECT_ROOT/Leanfmt" -name "*.lean" -type f | sort)
+    if ! "$LEANFMT_BIN" "$PROJECT_ROOT/Main.lean" "$PROJECT_ROOT/Leanfmt.lean" "${self_files[@]}" >/dev/null; then
+        echo -e "${RED}✗${NC} self formatting should succeed"
+        return 1
+    fi
+
+    echo -e "${GREEN}✓ CLI integration tests passed${NC}"
+    echo
 }
 discover_test_files() {
     local -n test_files_ref=$1
@@ -269,6 +378,8 @@ main() {
     print_introduction
     check_unauthorized_lean_files
     build_formatter
+    run_unit_tests
+    run_cli_tests
 
     local test_files=()
     discover_test_files test_files
