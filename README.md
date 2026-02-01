@@ -29,4 +29,6 @@ lake exe leanfmt --check src/**/*.lean
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) file.
+Apache License 2.0 - see [licenses/leanfmt](licenses/leanfmt).
+
+This project uses templates from [cc-sdd](https://github.com/gotalab/cc-sdd), and the license file is [licenses/cc-sdd](licenses/cc-sdd).
