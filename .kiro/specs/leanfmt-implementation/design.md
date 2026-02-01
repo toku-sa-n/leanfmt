@@ -9,6 +9,7 @@
 - ファイル入力と標準入力の両方をサポートし、CLI 入口で統一的に扱う
 - stdout / in-place / check の 3 モードを排他的に切り替えられる
 - check モードは stdin を許可し、ファイル未指定時は stdin がある場合に判定できる
+- stdin とファイルの同時指定は `-` を明示した場合に許可し、指定順に処理する
 - 標準 Lean 4 構文を少なくともサポートする
 - stdout で複数ファイルを整形する場合はファイル名ヘッダを付与する（単一ファイル/ stdin は除外）
 - 決定的かつ冪等な整形結果を保証し、CI 判定を安定化する
@@ -152,8 +153,11 @@ sequenceDiagram
 - 引数解析後に入力ソース（ファイル/標準入力）と出力モードを決定する
 - check / in-place / stdout の排他性を守る
 - check モードは stdin 入力を許可し、ファイル未指定時は stdin がある場合のみ判定できる
+- stdin を入力として扱うには `-` を明示する（例: `leanfmt -- foo.lean bar.lean -`）
+- stdin とファイルの同時指定は `-` がある場合のみ許可し、指定順に入力を処理する
 - stdout で複数ファイルを整形する場合はファイル名ヘッダを出力し、単一ファイルまたは stdin の場合は出力しない
 - IO 例外と整形エラーを捕捉し、標準エラーに診断を出す
+- 無効オプション時は Usage を標準エラーに出力する
 - 終了コードは成功 0、失敗 1 を一貫して返す
 
 **Dependencies**
@@ -181,6 +185,7 @@ end Leanfmt.CLI
 **Implementation Notes**
 - Integration: `Options` と `Module.parse` と `runFormatter` を直列に接続する
 - Validation: 入力がディレクトリの場合はエラーとして扱う
+- Validation: `-` が含まれるときのみ stdin を読み取り、それ以外は stdin を無視する
 - Output: stdout で複数ファイルを整形する場合のみファイル名ヘッダを付与する
 - Risks: IO 例外が未捕捉にならないよう、境界で捕捉する
 
@@ -197,6 +202,7 @@ end Leanfmt.CLI
 - 未知オプションを `ValidationError` として返す
 - in-place でファイル指定がない場合は失敗とする
 - check でファイル指定がない場合でも許可し、stdin の有無は CLI Runner が判定する
+- `-` は stdin 指定の特別な入力として扱い、順序は保持して CLI Runner に渡す
 
 **Dependencies**
 - Inbound: `CLI Runner` — 引数解析要求 (P0)
@@ -224,7 +230,7 @@ end Leanfmt
 - Invariants: `checkMode` と `inPlaceMode` は同時に true にならない
 
 **Implementation Notes**
-- Integration: `ValidationError` のメッセージを CLI へ伝播する
+- Integration: `ValidationError` のメッセージを CLI Runner へ伝播し、Usage の出力は CLI Runner が責務を持つ
 - Validation: 未知オプションは即時エラー
 - Risks: 引数追加時に既存互換性を壊さないようテストに追加する
 
