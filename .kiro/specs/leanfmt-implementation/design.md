@@ -198,11 +198,11 @@ namespace Leanfmt
 
 def Options.parseArguments (args : Array String) : Except ValidationError Options
 
-def Options.getCheckMode (opts : Options) : Bool
+def Options.isCheckMode (opts : Options) : Bool
 
-def Options.getInPlaceMode (opts : Options) : Bool
+def Options.isInPlaceMode (opts : Options) : Bool
 
-def Options.getShowHelp (opts : Options) : Bool
+def Options.isShowHelpMode (opts : Options) : Bool
 
 def Options.getFiles (opts : Options) : Array String
 end Leanfmt
